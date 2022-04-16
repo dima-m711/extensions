@@ -50,6 +50,13 @@
       "subtitle": "Amazon AWS",
       "description": "List All your CloudFormation Stacks",
       "mode": "view"
+    },
+    {
+      "name": "lambdas",
+      "title": "Lambdas",
+      "subtitle": "Amazon AWS",
+      "description": "List All your Lambdas",
+      "mode": "view"
     }
   ],
   "preferences": [

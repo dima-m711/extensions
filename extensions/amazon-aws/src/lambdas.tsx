@@ -5,6 +5,7 @@ import {
   List,
   OpenInBrowserAction,
   Detail,
+  LocalStorage,
 } from "@raycast/api";
 import { useState, useEffect, useCallback } from "react";
 import AWS from "aws-sdk";
@@ -45,22 +46,39 @@ async function loadLambdas(NextMarker?:string): Promise<FunctionList>{
   return [...(Functions || []),...nextFunctions];
 }
 
-export default function ListLambdas() {
-  const {loaded, hasError, data: lambdas, fetch} = useFetchData<FunctionList, ()=>Promise<FunctionList>>(loadLambdas);
-  useEffect(() => {
-    console.debug('start loading')
-    fetch();
-  },[]);
 
-  if (hasError) {
+const getCacheName = () => `lambdas-${preferences.aws_profile}`
+
+async function loadFromCache(): Promise<FunctionList>{
+  const functionsStr = await LocalStorage.getItem<string>(getCacheName()) ;
+  return JSON.parse(functionsStr);
+}
+
+export default function ListLambdas() {
+  const awsResult = useFetchData<FunctionList, ()=>Promise<FunctionList>>(loadLambdas);
+  const cachedResult = useFetchData<FunctionList, ()=>Promise<FunctionList>>(loadFromCache);
+
+  useEffect(() => {
+    console.debug('start loading');
+    awsResult.fetch();
+    cachedResult.fetch();
+  },[]);
+  useEffect(()=>{
+    console.debug('try to store');
+    if (!awsResult.hasError && awsResult.loaded && awsResult.data?.length){
+      console.debug('store cache');
+      LocalStorage.setItem(getCacheName(), JSON.stringify(awsResult.data));
+    }
+  },[awsResult.hasError, awsResult.loaded, awsResult.data])
+  if (awsResult.hasError) {
     return (
       <Detail markdown="No valid [configuration and credential file] (https://docs.aws.amazon.com/cli/latest/userguide/cli-configure-files.html) found in your machine." />
     );
   }
-  console.log('totla loaded', lambdas?.length)
+  const isLoaded = awsResult.loaded || (cachedResult.loaded && cachedResult.data?.length)
   return (
-    <List isLoading={!loaded} searchBarPlaceholder="Filter lambda by name...">
-      {lambdas?.map((lambda) => {
+    <List isLoading={!isLoaded } searchBarPlaceholder="Filter lambda by name...">
+      {(awsResult.data || cachedResult.data)?.map((lambda) => {
         return <LambdaListItem key={lambda.FunctionName} lambda={lambda} />;
       })}
     </List>
