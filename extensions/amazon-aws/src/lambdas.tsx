@@ -1,11 +1,9 @@
-import {getPreferenceValues, ActionPanel, CopyToClipboardAction, List, OpenInBrowserAction, Detail,clearLocalStorage} from "@raycast/api";
-import { LocalStorage } from "@raycast/api";
+import {getPreferenceValues, ActionPanel, CopyToClipboardAction, List, OpenInBrowserAction, Detail, getLocalStorageItem, setLocalStorageItem} from "@raycast/api";
 import { useState, useEffect, useCallback } from "react";
 import AWS from "aws-sdk";
 import setupAws from "./util/setupAws";
-import { FunctionConfiguration, FunctionList, String } from "aws-sdk/clients/lambda";
+import { FunctionConfiguration, FunctionList } from "aws-sdk/clients/lambda";
 import { Preferences } from "./types";
-import { compileFunction } from "vm";
 
 setupAws();
 const lambda = new AWS.Lambda({apiVersion: '2015-03-31'});
@@ -14,7 +12,7 @@ const preferences: Preferences = getPreferenceValues();
 function useFetchData<P, F extends (...args: any[]) => Promise<P>>(asyncFunction:F){
   const [loaded, setLoaded] = useState(false);
   const [data,setData] = useState<P>();
-  const [error, setError] = useState();
+  const [error, setError] = useState<Error>();
 
   const fetch = useCallback(async (...args)=>{
     try{
@@ -25,8 +23,8 @@ function useFetchData<P, F extends (...args: any[]) => Promise<P>>(asyncFunction
       setLoaded(true);
     }
     catch(e){
-      console.error(e)
-      setError(e);
+      console.error("Error in useFetchData", e);
+      setError(e as Error);
     }
 
   },[asyncFunction]);
@@ -45,7 +43,6 @@ function useFetchLambdas() {
       const {NextMarker: resultNextMarker,Functions} = await lambda.listFunctions({Marker:NextMarker}).promise();
       setFunctions((currentFunctions)=>{
         const newFunctions = [...(currentFunctions||[]),...(Functions||[])];
-        console.debug('load next',newFunctions?.length, NextMarker)
         return newFunctions;
       });
       if (resultNextMarker){
@@ -56,7 +53,7 @@ function useFetchLambdas() {
       }
     }
     catch(e:unknown){
-      console.error(e);
+      console.error("Error in useFetchLambdas", e);
       setError(e as Error);
     }
   }
@@ -65,7 +62,6 @@ function useFetchLambdas() {
 
 async function loadLambdas(NextMarker?:string): Promise<FunctionList>{
   const {NextMarker: resultNextMarker,Functions} = await lambda.listFunctions({Marker:NextMarker}).promise();
-  console.log('loaded functions', Functions?.length, "first",Functions?.[0]?.FunctionName)
   const nextFunctions = resultNextMarker ? await loadLambdas(resultNextMarker) : [];
   return [...(Functions || []),...nextFunctions];
 }
@@ -74,7 +70,7 @@ async function loadLambdas(NextMarker?:string): Promise<FunctionList>{
 const getFunctionsCachaName = () => `lambdas-functions-${preferences.aws_profile}`
 const getLastFetchDateCacheName = () => `lambdas-last-fetch-${preferences.aws_profile}`
 async function loadFromCache(): Promise<FunctionList>{
-  const functionsStr = await LocalStorage.getItem<string>(getFunctionsCachaName()) ;
+  const functionsStr = await getLocalStorageItem<string>(getFunctionsCachaName()) ;
   return JSON.parse(functionsStr || "[]");
 }
 
@@ -84,7 +80,7 @@ export default function ListLambdas() {
   useEffect(() => {
     const fetch = async () =>{
       cachedResult.fetch();
-      const lastFetchDate = await LocalStorage.getItem<string>(getLastFetchDateCacheName()) ;
+      const lastFetchDate = await getLocalStorageItem<string>(getLastFetchDateCacheName()) ;
       if (!lastFetchDate || Number(lastFetchDate) + preferences.cache_time_in_minutes * 60 * 1000 < Date.now()){
         awsResult.fetch();
       }
@@ -94,12 +90,12 @@ export default function ListLambdas() {
   const data = !awsResult.error &&  awsResult.data && cachedResult.data && awsResult.data?.length > cachedResult.data?.length ? awsResult.data : cachedResult.data;
   useEffect(()=>{
     if (!awsResult.hasError && awsResult.data && ((cachedResult?.data?.length || 0) < awsResult.data?.length ) && awsResult.data?.length){
-      LocalStorage.setItem(getFunctionsCachaName(), JSON.stringify(awsResult.data));
+      setLocalStorageItem(getFunctionsCachaName(), JSON.stringify(awsResult.data));
     }
   },[awsResult.hasError, awsResult.data?.length]);
   useEffect(()=>{
     if (awsResult.allLoaded ){
-      LocalStorage.setItem(getLastFetchDateCacheName(), Date.now());
+      setLocalStorageItem(getLastFetchDateCacheName(), Date.now());
     }
   })
   if(awsResult.error && (awsResult.error?.toString()).includes("The security token included in the request is expired")){
