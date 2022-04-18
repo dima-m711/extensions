@@ -60,7 +60,7 @@ function useFetchLambdas() {
       setError(e as Error);
     }
   }
-  return {fetch: loadNext, partialLoaded : !!functions?.length, allLoaded,hasError:!!error, data:functions, error  }
+  return {fetch: loadNext, loaded : !!functions?.length, allLoaded,hasError:!!error, data:functions, error  }
 }
 
 async function loadLambdas(NextMarker?:string): Promise<FunctionList>{
@@ -71,10 +71,10 @@ async function loadLambdas(NextMarker?:string): Promise<FunctionList>{
 }
 
 
-const getCacheName = () => `lambdas-${preferences.aws_profile}`
-
+const getFunctionsCachaName = () => `lambdas-functions-${preferences.aws_profile}`
+const getLastFetchDateCacheName = () => `lambdas-last-fetch-${preferences.aws_profile}`
 async function loadFromCache(): Promise<FunctionList>{
-  const functionsStr = await LocalStorage.getItem<string>(getCacheName()) ;
+  const functionsStr = await LocalStorage.getItem<string>(getFunctionsCachaName()) ;
   return JSON.parse(functionsStr || "[]");
 }
 
@@ -82,33 +82,39 @@ export default function ListLambdas() {
   const awsResult = useFetchLambdas();
   const cachedResult = useFetchData<FunctionList, ()=>Promise<FunctionList>>(loadFromCache);
   useEffect(() => {
-    console.debug('start loading');
-    awsResult.fetch();
-    cachedResult.fetch();
+    const fetch = async () =>{
+      cachedResult.fetch();
+      const lastFetchDate = await LocalStorage.getItem<string>(getLastFetchDateCacheName()) ;
+      if (!lastFetchDate || Number(lastFetchDate) + preferences.cache_time_in_minutes * 60 * 1000 < Date.now()){
+        awsResult.fetch();
+      }
+    }
+    fetch();
   },[]);
   const data = !awsResult.error &&  awsResult.data && cachedResult.data && awsResult.data?.length > cachedResult.data?.length ? awsResult.data : cachedResult.data;
   useEffect(()=>{
-    console.debug('try to store');
     if (!awsResult.hasError && awsResult.data && ((cachedResult?.data?.length || 0) < awsResult.data?.length ) && awsResult.data?.length){
-      console.debug('store cache');
-      LocalStorage.setItem(getCacheName(), JSON.stringify(awsResult.data));
+      LocalStorage.setItem(getFunctionsCachaName(), JSON.stringify(awsResult.data));
     }
-  },[awsResult.hasError, awsResult.allLoaded, awsResult.data])
-  if (awsResult?.error) {
-    if ((awsResult.error.toString() ).includes("The security token included in the request is expired")){
+  },[awsResult.hasError, awsResult.data?.length]);
+  useEffect(()=>{
+    if (awsResult.allLoaded ){
+      LocalStorage.setItem(getLastFetchDateCacheName(), Date.now());
+    }
+  })
+  if(awsResult.error && (awsResult.error?.toString()).includes("The security token included in the request is expired")){
+    if (!cachedResult.data?.length) {
       return (
         <Detail markdown="The security token included in the request is expired" />
       );
     }
-    console.log(awsResult.error);
+  } else if (awsResult?.error) {
     return (
       <Detail markdown="No valid [configuration and credential file] (https://docs.aws.amazon.com/cli/latest/userguide/cli-configure-files.html) found in your machine." />
     );
   }
-  console.log('awsResult.data',awsResult.data?.length);
-  console.log('cachedResult.data',cachedResult.data?.length);
 
-  const isLoaded = awsResult.partialLoaded || (cachedResult.loaded && cachedResult.data?.length)
+  const isLoaded = awsResult.loaded || (cachedResult.loaded && cachedResult.data?.length)
   return (
     <List isLoading={!isLoaded } searchBarPlaceholder="Filter lambda by name...">
       {(data)?.map((lambda) => {

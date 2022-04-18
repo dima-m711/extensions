@@ -75,6 +75,14 @@
       "title": "AWS Profile",
       "description": "set aws profile name",
       "placeholder": "default"
+    },
+    {
+      "name": "cache_time_in_minutes",
+      "type": "textfield",
+      "required":false,
+      "description": "How long should we cache the data in minutes",
+      "default": "60",
+      "title": "Cache Time in Minutes"
     }
   ],
   "dependencies": {
