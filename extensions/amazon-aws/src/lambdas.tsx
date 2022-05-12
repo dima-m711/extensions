@@ -109,7 +109,7 @@ export default function ListLambdas() {
       <Detail markdown="No valid [configuration and credential file] (https://docs.aws.amazon.com/cli/latest/userguide/cli-configure-files.html) found in your machine." />
     );
   }
-
+  console.log('data',data?.[0])
   const isLoaded = awsResult.loaded || (cachedResult.loaded && cachedResult.data?.length)
   return (
     <List isLoading={!isLoaded } searchBarPlaceholder="Filter lambda by name...">
@@ -131,6 +131,7 @@ function LambdaListItem(props: { lambda: FunctionConfiguration}) {
       key={lambdaId}
       title={displayName}
       subtitle={lambda.Description}
+      accessoryTitle={lambda.LastModified}
       icon="lambda-icon.png"
       actions={
         <ActionPanel>
